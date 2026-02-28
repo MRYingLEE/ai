@@ -130,6 +130,8 @@ import { AISettingsWidget } from './widgets/ai-settings';
 
 import { initializeGlobalAPI } from './global-api';
 
+import { notebookActionsPlugin } from './notebook-actions';
+
 import { MainAreaChat } from './widgets/main-area-chat';
 
 namespace Private {
@@ -1765,7 +1767,8 @@ export default [
   inputToolbarFactory,
   completionStatus,
   skillsPlugin,
-  globalAPIPlugin
+  globalAPIPlugin,
+  notebookActionsPlugin
 ];
 
 // Export extension points for other extensions to use
