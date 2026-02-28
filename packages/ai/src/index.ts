@@ -48,6 +48,7 @@ import {
 
 import {
   ICommandPalette,
+  InputDialog,
   IThemeManager,
   showDialog,
   showErrorMessage,
@@ -123,10 +124,11 @@ import {
 } from './components';
 
 import { AISettingsModel } from './models/settings-model';
-
 import { DiffManager } from './diff-manager';
 
 import { AISettingsWidget } from './widgets/ai-settings';
+
+import { initializeGlobalAPI } from './global-api';
 
 import { MainAreaChat } from './widgets/main-area-chat';
 
@@ -1691,6 +1693,7 @@ const skillsPlugin: JupyterFrontEndPlugin<void> = {
         'Re-scan the agents skills directory and update the registry'
       ),
       execute: async () => {
+        clearSkillsCache();
         await loadAndRegister();
       }
     });
@@ -1722,6 +1725,24 @@ const skillsPlugin: JupyterFrontEndPlugin<void> = {
   }
 };
 
+/**
+ * Plugin that exposes AI state on globalThis.jupyter_ai
+ * for access by non-extension JavaScript code.
+ */
+const globalAPIPlugin: JupyterFrontEndPlugin<void> = {
+  id: '@jupyterlite/ai:global-api',
+  description: 'Expose AI state on globalThis.jupyter_ai for external JavaScript',
+  autoStart: true,
+  requires: [IAISettingsModel, ISkillRegistry],
+  activate: (
+    app: JupyterFrontEnd,
+    settingsModel: AISettingsModel,
+    skillRegistry: ISkillRegistry
+  ) => {
+    initializeGlobalAPI(settingsModel, skillRegistry);
+  }
+};
+
 export default [
   providerRegistryPlugin,
   anthropicProviderPlugin,
@@ -1743,8 +1764,11 @@ export default [
   settingsPanelPlugin,
   inputToolbarFactory,
   completionStatus,
-  skillsPlugin
+  skillsPlugin,
+  globalAPIPlugin
 ];
 
 // Export extension points for other extensions to use
 export * from './tokens';
+export * from './icons';
+export type { IJupyterAIGlobalAPI } from './global-api';
