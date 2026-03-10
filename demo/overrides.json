@@ -4,5 +4,23 @@
   },
   "@jupyterlab/notebook-extension:tracker": {
     "windowingMode": "contentVisibility"
+  },
+  "@jupyterlite/ai:settings-model": {
+    "useSecretsManager": false,
+    "providers": [
+      {
+        "id": "default",
+        "name": "default",
+        "provider": "generic",
+        "model": "gpt-5-mini",
+        "apiKey": "NoKey",
+        "baseURL": "https://dataxnow.helloway.workers.dev/v1",
+        "parameters": {
+          "temperature": 1,
+          "maxTurns": 25
+        }
+      }
+    ],
+    "defaultProvider": "default"
   }
 }
