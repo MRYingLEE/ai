@@ -8,11 +8,15 @@ import {
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 
-import { INotebookTracker } from '@jupyterlab/notebook';
+import { INotebookTracker, NotebookPanel } from '@jupyterlab/notebook';
 
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
 
-import { ToolbarButton } from '@jupyterlab/ui-components';
+import { CommandToolbarButton } from '@jupyterlab/ui-components';
+
+import { isCodeCellModel } from '@jupyterlab/cells';
+
+import { IOutputAreaModel } from '@jupyterlab/outputarea';
 
 import { streamText, type LanguageModel } from 'ai';
 
@@ -130,7 +134,7 @@ const AI_OUTPUT_TAG = '__jupyterlite_ai_action__';
  * Find the index of the existing shared AI output in a cell's outputs,
  * or return -1 if none exists.
  */
-function findAIOutputIndex(outputs: any): number {
+function findAIOutputIndex(outputs: IOutputAreaModel): number {
   for (let i = 0; i < outputs.length; i++) {
     const output = outputs.get(i);
     if (output?.metadata?.[AI_OUTPUT_TAG]) {
@@ -155,14 +159,11 @@ function setAIOutput(
     return -1;
   }
   const activeCell = notebook.content.activeCell;
-  if (!activeCell || activeCell.model.type !== 'code') {
+  if (!activeCell || !isCodeCellModel(activeCell.model)) {
     return -1;
   }
 
-  const outputs = (activeCell.model as any).outputs;
-  if (!outputs) {
-    return -1;
-  }
+  const outputs = activeCell.model.outputs;
 
   const content = `**${title}**\n\n${markdown}`;
 
@@ -216,6 +217,13 @@ async function executeAction(
     return;
   }
 
+  // Abort the stream if the notebook panel is disposed while streaming.
+  const abortController = new AbortController();
+  const notebookPanel = notebookTracker.currentWidget;
+  if (notebookPanel) {
+    notebookPanel.disposed.connect(() => abortController.abort());
+  }
+
   // Build prompt based on the action
   let prompt: string;
   let title: string;
@@ -261,11 +269,10 @@ async function executeAction(
     // For format/complete, stream code directly into the cell source
     // without creating an extra output area.
     const originalSource = focalCode;
-    setActiveCellSource(notebookTracker, originalSource);
     setAIOutput(notebookTracker, title, '⏳ Processing…');
 
     try {
-      const result = streamText({ model, prompt });
+      const result = streamText({ model, prompt, abortSignal: abortController.signal });
       let fullText = '';
       let codeStarted = false;
 
@@ -298,7 +305,7 @@ async function executeAction(
     setAIOutput(notebookTracker, title, '⏳ Thinking…');
 
     try {
-      const result = streamText({ model, prompt });
+      const result = streamText({ model, prompt, abortSignal: abortController.signal });
       let fullText = '';
 
       for await (const delta of result.textStream) {
@@ -396,26 +403,22 @@ export const notebookActionsPlugin: JupyterFrontEndPlugin<void> = {
     // Add toolbar buttons to each newly opened notebook, placed
     // right after the built-in left-side items (after "cellType").
     notebookTracker.widgetAdded.connect(
-      (_sender: INotebookTracker, notebookPanel: any) => {
-        // Small delay to ensure toolbar is ready
-        requestAnimationFrame(() => {
+      (_sender: INotebookTracker, notebookPanel: NotebookPanel) => {
+        // Wait until the panel is revealed so all toolbar factory items
+        // (registered via IToolbarWidgetRegistry) are present before
+        // we look up the "cellType" insert position.
+        void notebookPanel.revealed.then(() => {
           // Find the position just after the "cellType" dropdown so the
           // AI buttons sit with the other left-aligned toolbar items.
-          const names: string[] = Array.from(
-            notebookPanel.toolbar.names() as IterableIterator<string>
-          );
+          const names: string[] = Array.from(notebookPanel.toolbar.names());
           let insertIndex = names.indexOf('cellType');
           insertIndex = insertIndex === -1 ? 0 : insertIndex + 1;
 
           for (let i = 0; i < actionDefs.length; i++) {
             const def = actionDefs[i];
-            const commandId = ACTION_COMMANDS[def.key];
-            const button = new ToolbarButton({
-              tooltip: def.caption,
-              icon: def.icon,
-              onClick: () => {
-                app.commands.execute(commandId);
-              }
+            const button = new CommandToolbarButton({
+              commands: app.commands,
+              id: ACTION_COMMANDS[def.key]
             });
             button.addClass('jp-ai-notebook-action-button');
             notebookPanel.toolbar.insertItem(

@@ -5,6 +5,7 @@ import {
   IChatContext,
   IMessage,
   IMessageContent,
+  IMimeModelBody,
   INewMessage,
   IUser
 } from '@jupyter/chat';
@@ -780,7 +781,8 @@ export class AIChatModel extends AbstractChatModel {
     this._toolContexts.set(event.data.callId, context);
 
     const toolCallMessage: IMessageContent = {
-      body: {
+      body: '',
+      mime_model: {
         data: {
           'application/vnd.jupyter.chat.components': 'tool-call'
         },
@@ -828,7 +830,8 @@ export class AIChatModel extends AbstractChatModel {
       );
       for (const bundle of mimeBundles) {
         this.messageAdded({
-          body: bundle,
+          body: '',
+          mime_model: bundle,
           sender: this._getAIUser(),
           id: UUID.uuid4(),
           time: Date.now() / 1000,
@@ -926,7 +929,7 @@ export class AIChatModel extends AbstractChatModel {
 
     context.status = status;
     existingMessage.update({
-      body: {
+      mime_model: {
         data: {
           'application/vnd.jupyter.chat.components': 'tool-call'
         },
@@ -960,7 +963,8 @@ export class AIChatModel extends AbstractChatModel {
 }
 
 namespace Private {
-  type IMimeMessageBody = Exclude<IMessageContent['body'], string>;
+  // Re-use the upstream mime model body type.
+  type IMimeMessageBody = IMimeModelBody;
 
   type IDisplayOutput =
     | nbformat.IDisplayData

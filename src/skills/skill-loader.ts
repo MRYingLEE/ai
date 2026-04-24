@@ -102,7 +102,9 @@ async function loadSkills(
   const skills: ISkillFileDefinition[] = [];
   const cached = _pathCache.get(skillsPath);
 
-  // If the path was previously verified to not exist, re-check it.
+  // If the path was previously verified to not exist, re-check it every time
+  // so that a newly-created skills directory is picked up automatically on the
+  // next load (e.g., after the user creates ".agents/skills" for the first time).
   // If it was verified to exist, skip the segment-walking and go
   // straight to listing the directory.
   if (!cached || !cached.pathExists) {

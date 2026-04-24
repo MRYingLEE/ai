@@ -65,7 +65,7 @@ globalThis.jupyter_ai?.skills
 // => [{ name: "notebook-bootstrap", description: "..." }, ...]
 
 // Active provider (API keys are never exposed)
-globalThis.jupyter_ai?.active_providers
+globalThis.jupyter_ai?.active_provider
 // => { id: "openai-123", provider: "openai", model: "gpt-4o", name: "My OpenAI" }
 // => null (if no provider is configured)
 
