@@ -22,7 +22,6 @@ import {
 
 import {
   ICommandPalette,
-  InputDialog,
   IThemeManager,
   showDialog,
   showErrorMessage,
@@ -64,8 +63,6 @@ import { PromiseDelegate, UUID } from '@lumino/coreutils';
 import { DisposableSet } from '@lumino/disposable';
 
 import { CommandRegistry } from '@lumino/commands';
-
-import { IComponentsRendererFactory } from 'jupyter-chat-components';
 
 import { ISecretsManager, SecretsManager } from 'jupyter-secrets-manager';
 
@@ -407,7 +404,6 @@ const plugin: JupyterFrontEndPlugin<IChatTracker> = {
     ILayoutRestorer,
     ILabShell,
     ITranslator,
-    IComponentsRendererFactory,
     ICommandPalette,
     IDocumentManager
   ],
@@ -422,7 +418,6 @@ const plugin: JupyterFrontEndPlugin<IChatTracker> = {
     restorer?: ILayoutRestorer,
     labShell?: ILabShell,
     translator?: ITranslator,
-    chatComponentsFactory?: IComponentsRendererFactory,
     palette?: ICommandPalette,
     documentManager?: IDocumentManager
   ): IChatTracker => {
@@ -673,24 +668,6 @@ const plugin: JupyterFrontEndPlugin<IChatTracker> = {
     /**
      * The callback to approve or reject a tool.
      */
-    function toolCallApproval(
-      targetId: string,
-      approvalId: string,
-      isApproved: boolean
-    ) {
-      const model = tracker.find(chat => chat.model.name === targetId)?.model;
-      if (!model) {
-        return;
-      }
-      isApproved
-        ? (model as AIChatModel).agentManager.approveToolCall(approvalId)
-        : (model as AIChatModel).agentManager.rejectToolCall(approvalId);
-    }
-
-    if (chatComponentsFactory) {
-      chatComponentsFactory.toolCallApproval = toolCallApproval;
-    }
-
     return tracker;
   }
 };

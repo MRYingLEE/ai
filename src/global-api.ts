@@ -3,8 +3,8 @@
  * Distributed under the terms of the Modified BSD License.
  */
 
-import type { AISettingsModel, IProviderConfig } from './models/settings-model';
-import type { ISkillRegistry } from './tokens';
+import type { AISettingsModel } from './models/settings-model';
+import type { IProviderConfig, ISkillRegistry } from './tokens';
 
 /**
  * Fields that must never be exposed via the global API because they
