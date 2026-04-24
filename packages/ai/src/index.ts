@@ -48,7 +48,6 @@ import {
 
 import {
   ICommandPalette,
-  InputDialog,
   IThemeManager,
   showDialog,
   showErrorMessage,
@@ -90,8 +89,6 @@ import { UUID } from '@lumino/coreutils';
 import { DisposableSet } from '@lumino/disposable';
 
 import { CommandRegistry } from '@lumino/commands';
-
-import { IComponentsRendererFactory } from 'jupyter-chat-components';
 
 import { ISecretsManager, SecretsManager } from 'jupyter-secrets-manager';
 
@@ -394,7 +391,6 @@ const plugin: JupyterFrontEndPlugin<IChatTracker> = {
     ILayoutRestorer,
     ILabShell,
     ITranslator,
-    IComponentsRendererFactory,
     ICommandPalette,
     IDocumentManager
   ],
@@ -409,7 +405,6 @@ const plugin: JupyterFrontEndPlugin<IChatTracker> = {
     restorer?: ILayoutRestorer,
     labShell?: ILabShell,
     translator?: ITranslator,
-    chatComponentsFactory?: IComponentsRendererFactory,
     palette?: ICommandPalette,
     documentManager?: IDocumentManager
   ): IChatTracker => {
@@ -658,65 +653,6 @@ const plugin: JupyterFrontEndPlugin<IChatTracker> = {
     /**
      * The callback for grouped tool calls permission decisions.
      */
-    function toolCallPermissionDecision(
-      sessionId: string,
-      toolCallId: string,
-      optionId: string
-    ) {
-      const model = tracker.find(chat => chat.model.name === sessionId)
-        ?.model as IAIChatModel;
-      if (!model) {
-        return;
-      }
-
-      const isApproved = optionId === 'approve';
-      isApproved
-        ? model.agentManager.approveToolCall(toolCallId)
-        : model.agentManager.rejectToolCall(toolCallId);
-    }
-
-    if (chatComponentsFactory) {
-      chatComponentsFactory.groupedToolCallCallbacks = {
-        ...chatComponentsFactory.groupedToolCallCallbacks,
-        toolCallPermissionDecision
-      };
-
-      chatComponentsFactory.queueMessageCallbacks = {
-        ...chatComponentsFactory.queueMessageCallbacks,
-        removeQueuedMessage: (targetId: string, messageId: string) => {
-          const model = tracker.find(
-            chat => chat.model.name === targetId
-          )?.model;
-          if (!model) {
-            return;
-          }
-          (model as IAIChatModel).removeQueuedMessage(messageId);
-        },
-        reorderQueuedMessages: (targetId: string, messageIds: string[]) => {
-          const model = tracker.find(
-            chat => chat.model.name === targetId
-          )?.model;
-          if (!model) {
-            return;
-          }
-          (model as IAIChatModel).reorderQueuedMessages(messageIds);
-        },
-        editQueuedMessage: (
-          targetId: string,
-          messageId: string,
-          newBody: string
-        ) => {
-          const model = tracker.find(
-            chat => chat.model.name === targetId
-          )?.model;
-          if (!model) {
-            return;
-          }
-          (model as IAIChatModel).editQueuedMessage(messageId, newBody);
-        }
-      };
-    }
-
     return tracker;
   }
 };

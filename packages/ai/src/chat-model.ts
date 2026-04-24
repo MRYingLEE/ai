@@ -5,7 +5,6 @@ import {
   IChatContext,
   IMessage,
   IMessageContent,
-  IMimeModelBody,
   INewMessage,
   IUser
 } from '@jupyter/chat';
@@ -197,19 +196,16 @@ export class AIChatModel extends AbstractChatModel implements IAIChatModel {
         this._autosaveDebouncer.invoke,
         this._autosaveDebouncer
       );
-      this.messageChanged.connect(
-        this._autosaveDebouncer.invoke,
-        this._autosaveDebouncer
-      );
+      this.messagesUpdated.connect(this._syncAutosaveMessageListeners, this);
+      this._syncAutosaveMessageListeners();
+      this._autosaveDebouncer.invoke();
     } else {
       this.messagesUpdated.disconnect(
         this._autosaveDebouncer.invoke,
         this._autosaveDebouncer
       );
-      this.messageChanged.disconnect(
-        this._autosaveDebouncer.invoke,
-        this._autosaveDebouncer
-      );
+      this.messagesUpdated.disconnect(this._syncAutosaveMessageListeners, this);
+      this._disconnectAutosaveMessageListeners();
     }
     this._autosaveDebouncer.invoke();
   }
@@ -258,7 +254,36 @@ export class AIChatModel extends AbstractChatModel implements IAIChatModel {
       this._autosaveDebouncer.invoke,
       this._autosaveDebouncer
     );
+    this.messagesUpdated.disconnect(this._syncAutosaveMessageListeners, this);
+    this._disconnectAutosaveMessageListeners();
     super.dispose();
+  }
+
+  /**
+   * Reconnect autosave handlers to the current message list.
+   */
+  private _syncAutosaveMessageListeners(): void {
+    this._disconnectAutosaveMessageListeners();
+    for (const message of this.messages) {
+      message.changed.connect(
+        this._autosaveDebouncer.invoke,
+        this._autosaveDebouncer
+      );
+      this._autosaveObservedMessages.add(message);
+    }
+  }
+
+  /**
+   * Disconnect autosave handlers from any tracked messages.
+   */
+  private _disconnectAutosaveMessageListeners(): void {
+    for (const message of this._autosaveObservedMessages) {
+      message.changed.disconnect(
+        this._autosaveDebouncer.invoke,
+        this._autosaveDebouncer
+      );
+    }
+    this._autosaveObservedMessages.clear();
   }
 
   /**
@@ -1029,8 +1054,7 @@ export class AIChatModel extends AbstractChatModel implements IAIChatModel {
     this._toolContexts.set(event.data.callId, context);
 
     const toolCallMessage: IMessageContent = {
-      body: '',
-      mime_model: {
+      body: {
         data: {
           'application/vnd.jupyter.chat.components': 'grouped-tool-calls'
         },
@@ -1084,8 +1108,7 @@ export class AIChatModel extends AbstractChatModel implements IAIChatModel {
       );
       for (const bundle of mimeBundles) {
         this.messageAdded({
-          body: '',
-          mime_model: bundle,
+          body: bundle,
           sender: this._getAIUser(),
           id: UUID.uuid4(),
           time: Date.now() / 1000,
@@ -1189,7 +1212,7 @@ export class AIChatModel extends AbstractChatModel implements IAIChatModel {
 
     context.status = status;
     existingMessage.update({
-      mime_model: {
+      body: {
         data: {
           'application/vnd.jupyter.chat.components': 'grouped-tool-calls'
         },
@@ -1254,6 +1277,7 @@ export class AIChatModel extends AbstractChatModel implements IAIChatModel {
   private _contentsManager?: Contents.IManager;
   private _autosave: boolean = false;
   private _autosaveChanged = new Signal<IAIChatModel, boolean>(this);
+  private _autosaveObservedMessages = new Set<IMessage>();
   private _autosaveDebouncer: Debouncer;
   private _messageQueue: Private.IQueuedItem[] = [];
   private _isBusy: boolean = false;
@@ -1268,6 +1292,7 @@ namespace Private {
     body: string;
     _originalMsg: IMessageContent;
   }
+  type IMimeMessageBody = Exclude<IMessageContent['body'], string>;
 
   type IDisplayOutput =
     | nbformat.IDisplayData
@@ -1296,7 +1321,7 @@ namespace Private {
   export const toMimeBundle = (
     value: IDisplayOutput,
     trustedMimeTypes: ReadonlySet<string>
-  ): IMimeModelBody | null => {
+  ): IMimeMessageBody | null => {
     const data = value.data;
     if (!isPlainObject(data) || Object.keys(data).length === 0) {
       return null;
@@ -1351,8 +1376,8 @@ namespace Private {
   export function extractMimeBundlesFromUnknown(
     content: unknown,
     options: { trustedMimeTypes?: ReadonlyArray<string> } = {}
-  ): IMimeModelBody[] {
-    const bundles: IMimeModelBody[] = [];
+  ): IMimeMessageBody[] {
+    const bundles: IMimeMessageBody[] = [];
     const outputs = toDisplayOutputs(content);
     const trustedMimeTypes = new Set(options.trustedMimeTypes ?? []);
     for (const output of outputs) {
@@ -1412,7 +1437,7 @@ namespace Private {
           if (cellContents) {
             textContents.push(cellContents);
           }
-        } else {
+        } else if (attachment.type === 'file') {
           let mimetype = attachment.mimetype;
           const fileExtension = PathExt.extname(attachment.value).toLowerCase();
 
