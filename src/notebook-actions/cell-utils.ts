@@ -5,6 +5,7 @@
 
 import { INotebookTracker, NotebookPanel } from '@jupyterlab/notebook';
 import * as nbformat from '@jupyterlab/nbformat';
+import { isCodeCellModel } from '@jupyterlab/cells';
 
 /**
  * Maximum number of characters to include from previous cells.
@@ -86,19 +87,16 @@ export function getActiveCellErrorOutput(
   }
 
   const model = activeCell.model;
-  if (model.type !== 'code') {
+  if (!isCodeCellModel(model)) {
     return '';
   }
 
-  const outputs = (model as any).outputs;
-  if (!outputs) {
-    return '';
-  }
+  const outputs = model.outputs;
 
   const errorParts: string[] = [];
 
   for (let i = 0; i < outputs.length; i++) {
-    const output = outputs.get(i) as nbformat.IOutput;
+    const output = outputs.get(i).toJSON();
     if (output.output_type === 'error') {
       const err = output as nbformat.IError;
       errorParts.push(
@@ -132,19 +130,16 @@ export function getActiveCellStdout(notebookTracker: INotebookTracker): string {
   }
 
   const model = activeCell.model;
-  if (model.type !== 'code') {
+  if (!isCodeCellModel(model)) {
     return '';
   }
 
-  const outputs = (model as any).outputs;
-  if (!outputs) {
-    return '';
-  }
+  const outputs = model.outputs;
 
   const stdoutParts: string[] = [];
 
   for (let i = 0; i < outputs.length; i++) {
-    const output = outputs.get(i) as nbformat.IOutput;
+    const output = outputs.get(i).toJSON();
     if (output.output_type === 'stream') {
       const stream = output as nbformat.IStream;
       if (stream.name === 'stdout') {

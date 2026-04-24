@@ -10,6 +10,18 @@
  */
 
 /**
+ * Wrap code in a fenced code block that is safe even if the code contains
+ * triple backticks. Uses the shortest fence longer than any backtick run
+ * already present in the code (CommonMark §4.5 rule).
+ */
+function safeFence(code: string): string {
+  const match = code.match(/`+/g);
+  const maxLen = match ? Math.max(...match.map(m => m.length)) : 0;
+  const fence = '`'.repeat(Math.max(3, maxLen + 1));
+  return `${fence}\n${code}\n${fence}`;
+}
+
+/**
  * Build the "Format" prompt.
  *
  * The AI should improve formatting, add comments, docstrings, and type hints
@@ -31,9 +43,7 @@ export function formatPrompt(focalCode: string): string {
 - After the code block, briefly list the improvements you made.
 
 ## Code
-\`\`\`
-${focalCode}
-\`\`\`
+${safeFence(focalCode)}
 
 Provide the formatted code now.`;
 }
@@ -60,34 +70,26 @@ export function explainPrompt(
   if (previousCode) {
     prompt += `
 ## Context from previous cells
-\`\`\`
-${previousCode}
-\`\`\`
+${safeFence(previousCode)}
 `;
   }
 
   prompt += `
 ## Code to explain
-\`\`\`
-${focalCode}
-\`\`\`
+${safeFence(focalCode)}
 `;
 
   if (stdout) {
     prompt += `
 ## Standard output
-\`\`\`
-${stdout}
-\`\`\`
+${safeFence(stdout)}
 `;
   }
 
   if (errorOutput) {
     prompt += `
 ## Error output
-\`\`\`
-${errorOutput}
-\`\`\`
+${safeFence(errorOutput)}
 `;
   }
 
@@ -117,25 +119,19 @@ export function debugPrompt(
   if (previousCode) {
     prompt += `
 ## Context from previous cells
-\`\`\`
-${previousCode}
-\`\`\`
+${safeFence(previousCode)}
 `;
   }
 
   prompt += `
 ## Code with the issue
-\`\`\`
-${focalCode}
-\`\`\`
+${safeFence(focalCode)}
 `;
 
   if (errorOutput) {
     prompt += `
 ## Error message
-\`\`\`
-${errorOutput}
-\`\`\`
+${safeFence(errorOutput)}
 `;
   } else {
     prompt += `
@@ -168,17 +164,13 @@ export function completePrompt(
   if (previousCode) {
     prompt += `
 ## Context from previous cells
-\`\`\`
-${previousCode}
-\`\`\`
+${safeFence(previousCode)}
 `;
   }
 
   prompt += `
 ## Code to complete
-\`\`\`
-${focalCode}
-\`\`\`
+${safeFence(focalCode)}
 
 Complete the code now.`;
   return prompt;
@@ -205,17 +197,13 @@ export function reviewPrompt(focalCode: string, previousCode: string): string {
   if (previousCode) {
     prompt += `
 ## Context from previous cells
-\`\`\`
-${previousCode}
-\`\`\`
+${safeFence(previousCode)}
 `;
   }
 
   prompt += `
 ## Code to review
-\`\`\`
-${focalCode}
-\`\`\`
+${safeFence(focalCode)}
 
 Provide the code review now.`;
   return prompt;

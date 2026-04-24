@@ -7,21 +7,25 @@ import type { AISettingsModel, IProviderConfig } from './models/settings-model';
 import type { ISkillRegistry } from '@jupyternaut/agent';
 
 /**
- * Fields that must never be exposed via the global API because they
- * may contain secrets (API keys, auth headers, etc.).
+ * Fields from IProviderConfig that are safe to expose via the global API.
+ * Using an allowlist (rather than a blocklist of sensitive fields) means
+ * new provider fields are hidden by default until explicitly approved here.
  */
-const SENSITIVE_FIELDS: ReadonlySet<string> = new Set([
-  'apiKey',
-  'headers',
-  'customSettings'
+const SAFE_PROVIDER_FIELDS: ReadonlySet<string> = new Set([
+  'id',
+  'name',
+  'provider',
+  'model',
+  'baseURL',
+  'parameters'
 ]);
 
 /**
- * A provider config with sensitive fields stripped for safe exposure.
+ * A provider config with only the safe fields exposed.
  */
-type ISanitizedProviderConfig = Omit<
+type ISanitizedProviderConfig = Pick<
   IProviderConfig,
-  'apiKey' | 'headers' | 'customSettings'
+  'id' | 'name' | 'provider' | 'model' | 'baseURL' | 'parameters'
 >;
 
 /**
@@ -46,7 +50,7 @@ export interface IJupyterAIGlobalAPI {
    * The currently active provider configuration (API keys stripped).
    * null if no provider is configured.
    */
-  readonly active_providers: Readonly<{
+  readonly active_provider: Readonly<{
     id: string;
     provider: string;
     model: string;
@@ -87,7 +91,7 @@ export function initializeGlobalAPI(
 
   settingsModel.stateChanged.connect(() => {
     updateGlobalAPI({
-      active_providers: buildActiveProviderSnapshot(settingsModel),
+      active_provider: buildActiveProviderSnapshot(settingsModel),
       settings: buildSettingsSnapshot(settingsModel)
     });
   });
@@ -103,7 +107,7 @@ function buildFullSnapshot(
 ): IJupyterAIGlobalAPI {
   return Object.freeze({
     skills: buildSkillsSnapshot(skillRegistry),
-    active_providers: buildActiveProviderSnapshot(settingsModel),
+    active_provider: buildActiveProviderSnapshot(settingsModel),
     settings: buildSettingsSnapshot(settingsModel)
   });
 }
@@ -120,7 +124,7 @@ function buildSkillsSnapshot(
 
 function buildActiveProviderSnapshot(
   settingsModel: AISettingsModel
-): IJupyterAIGlobalAPI['active_providers'] {
+): IJupyterAIGlobalAPI['active_provider'] {
   const config = settingsModel.config;
   const provider = settingsModel.getProvider(config.defaultProvider);
   if (!provider) {
@@ -143,7 +147,7 @@ function buildSettingsSnapshot(
     (p: IProviderConfig): ISanitizedProviderConfig => {
       const sanitized: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(p)) {
-        if (!SENSITIVE_FIELDS.has(key)) {
+        if (SAFE_PROVIDER_FIELDS.has(key)) {
           sanitized[key] = value;
         }
       }
