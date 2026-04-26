@@ -86,7 +86,7 @@
         "@lumino/polling": "^2.1.4",
         "@lumino/signaling": "^2.1.4",
         "@lumino/widgets": "^2.7.1",
-        "@mui/icons-material": "^7",
+        "@mui/icons-material": "^9.0.0",
         "@mui/material": "^7",
         "ai": "^6.0.116",
         "jupyter-chat-components": "^0.2.0",
