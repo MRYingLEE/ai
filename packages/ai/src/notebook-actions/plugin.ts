@@ -1,0 +1,384 @@
+/*
+ * Copyright (c) Jupyter Development Team.
+ * Distributed under the terms of the Modified BSD License.
+ */
+
+import {
+  JupyterFrontEnd,
+  JupyterFrontEndPlugin
+} from '@jupyterlab/application';
+
+import { INotebookTracker, NotebookPanel } from '@jupyterlab/notebook';
+
+import { ITranslator, nullTranslator } from '@jupyterlab/translation';
+
+import { CommandToolbarButton } from '@jupyterlab/ui-components';
+
+import { isCodeCellModel } from '@jupyterlab/cells';
+
+import { IOutputAreaModel } from '@jupyterlab/outputarea';
+
+import { streamText, type LanguageModel } from 'ai';
+import { IProviderRegistry } from '@jupyternaut/agent';
+
+import { IAISettingsModel } from '../tokens';
+import type { AISettingsModel } from '../models/settings-model';
+
+import {
+  getActiveCellSource,
+  getPreviousCellsSource,
+  getActiveCellErrorOutput,
+  getActiveCellStdout,
+  setActiveCellSource
+} from './cell-utils';
+
+import {
+  formatPrompt,
+  explainPrompt,
+  debugPrompt,
+  completePrompt,
+  reviewPrompt
+} from './prompts';
+
+import {
+  formatIcon,
+  explainIcon,
+  debugIcon,
+  completeIcon,
+  reviewIcon
+} from './icons';
+
+const ACTION_COMMANDS = {
+  format: '@jupyterlite/ai:notebook-action-format',
+  explain: '@jupyterlite/ai:notebook-action-explain',
+  debug: '@jupyterlite/ai:notebook-action-debug',
+  complete: '@jupyterlite/ai:notebook-action-complete',
+  review: '@jupyterlite/ai:notebook-action-review'
+} as const;
+
+function createModelFromSettings(
+  settingsModel: AISettingsModel,
+  providerRegistry: IProviderRegistry
+): LanguageModel | null {
+  const config = settingsModel.getDefaultProvider();
+  if (!config) {
+    return null;
+  }
+
+  try {
+    return (
+      providerRegistry.createChatModel(config.provider, {
+        provider: config.provider,
+        model: config.model,
+        apiKey: config.apiKey,
+        baseURL: config.baseURL,
+        headers: config.headers
+      }) ?? null
+    );
+  } catch (e) {
+    console.error('Failed to create model for notebook action', e);
+    return null;
+  }
+}
+
+function extractCodeBlock(text: string): string | null {
+  const match = text.match(/```[^\n]*\n([\s\S]*?)```/);
+  return match ? match[1].trimEnd() : null;
+}
+
+function extractPartialCodeBlock(
+  text: string
+): { code: string; complete: boolean } | null {
+  const openMatch = text.match(/```[^\n]*\n/);
+  if (!openMatch || openMatch.index === undefined) {
+    return null;
+  }
+  const codeStart = openMatch.index + openMatch[0].length;
+  const rest = text.slice(codeStart);
+  const closeMatch = rest.match(/\n```(?:\s|$)/);
+  if (closeMatch && closeMatch.index !== undefined) {
+    return { code: rest.slice(0, closeMatch.index), complete: true };
+  }
+  if (rest.endsWith('```')) {
+    const trimmed = rest.slice(0, -3);
+    if (trimmed.endsWith('\n')) {
+      return { code: trimmed.slice(0, -1), complete: true };
+    }
+  }
+  return { code: rest, complete: false };
+}
+
+const AI_OUTPUT_TAG = '__jupyterlite_ai_action__';
+
+function findAIOutputIndex(outputs: IOutputAreaModel): number {
+  for (let i = 0; i < outputs.length; i++) {
+    const output = outputs.get(i);
+    if (output?.metadata?.[AI_OUTPUT_TAG]) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function setAIOutput(
+  notebookTracker: INotebookTracker,
+  title: string,
+  markdown: string
+): number {
+  const notebook = notebookTracker.currentWidget;
+  if (!notebook) {
+    return -1;
+  }
+  const activeCell = notebook.content.activeCell;
+  if (!activeCell || !isCodeCellModel(activeCell.model)) {
+    return -1;
+  }
+
+  const outputs = activeCell.model.outputs;
+
+  const content = `**${title}**\n\n${markdown}`;
+
+  const outputData = {
+    output_type: 'display_data' as const,
+    data: {
+      'text/markdown': content,
+      'text/plain': `[${title}]\n${markdown}`
+    },
+    metadata: { [AI_OUTPUT_TAG]: true }
+  };
+
+  const existing = findAIOutputIndex(outputs);
+  if (existing !== -1) {
+    outputs.set(existing, outputData);
+    return existing;
+  }
+
+  outputs.add(outputData);
+  return outputs.length - 1;
+}
+
+async function executeAction(
+  action: keyof typeof ACTION_COMMANDS,
+  notebookTracker: INotebookTracker,
+  settingsModel: AISettingsModel,
+  providerRegistry: IProviderRegistry
+): Promise<void> {
+  const focalCode = getActiveCellSource(notebookTracker);
+  if (!focalCode || !focalCode.trim()) {
+    console.warn('No active cell or cell is empty');
+    return;
+  }
+
+  const model = createModelFromSettings(settingsModel, providerRegistry);
+  if (!model) {
+    setAIOutput(
+      notebookTracker,
+      'Error',
+      'No AI provider configured. Please add and select a provider in the AI settings.'
+    );
+    return;
+  }
+
+  const abortController = new AbortController();
+  const notebookPanel = notebookTracker.currentWidget;
+  if (notebookPanel) {
+    notebookPanel.disposed.connect(() => abortController.abort());
+  }
+
+  let prompt: string;
+  let title: string;
+
+  switch (action) {
+    case 'format': {
+      prompt = formatPrompt(focalCode);
+      title = 'AI Format';
+      break;
+    }
+    case 'explain': {
+      const previousCode = getPreviousCellsSource(notebookTracker);
+      const stdout = getActiveCellStdout(notebookTracker);
+      const errorOutput = getActiveCellErrorOutput(notebookTracker);
+      prompt = explainPrompt(focalCode, previousCode, stdout, errorOutput);
+      title = 'AI Explain';
+      break;
+    }
+    case 'debug': {
+      const previousCode = getPreviousCellsSource(notebookTracker);
+      const errorOutput = getActiveCellErrorOutput(notebookTracker);
+      prompt = debugPrompt(focalCode, previousCode, errorOutput);
+      title = 'AI Debug';
+      break;
+    }
+    case 'complete': {
+      const previousCode = getPreviousCellsSource(notebookTracker);
+      prompt = completePrompt(focalCode, previousCode);
+      title = 'AI Complete';
+      break;
+    }
+    case 'review': {
+      const previousCode = getPreviousCellsSource(notebookTracker);
+      prompt = reviewPrompt(focalCode, previousCode);
+      title = 'AI Review';
+      break;
+    }
+  }
+
+  const isDirectReplace = action === 'format' || action === 'complete';
+
+  if (isDirectReplace) {
+    const originalSource = focalCode;
+    setAIOutput(notebookTracker, title, '⏳ Processing…');
+
+    try {
+      const result = streamText({
+        model,
+        prompt,
+        abortSignal: abortController.signal
+      });
+      let fullText = '';
+      let codeStarted = false;
+
+      for await (const delta of result.textStream) {
+        fullText += delta;
+        const extracted = extractPartialCodeBlock(fullText);
+        if (extracted) {
+          codeStarted = true;
+          setActiveCellSource(notebookTracker, extracted.code);
+        }
+      }
+
+      const finalCode = extractCodeBlock(fullText);
+      if (finalCode) {
+        setActiveCellSource(notebookTracker, finalCode);
+      } else if (!codeStarted) {
+        setActiveCellSource(notebookTracker, originalSource);
+      }
+    } catch (error: any) {
+      setActiveCellSource(notebookTracker, originalSource);
+      const message =
+        error?.message ?? 'Unknown error occurred while contacting the AI.';
+      setAIOutput(notebookTracker, `${title} — Error`, message);
+    }
+  } else {
+    setAIOutput(notebookTracker, title, '⏳ Thinking…');
+
+    try {
+      const result = streamText({
+        model,
+        prompt,
+        abortSignal: abortController.signal
+      });
+      let fullText = '';
+
+      for await (const delta of result.textStream) {
+        fullText += delta;
+        setAIOutput(notebookTracker, title, fullText);
+      }
+    } catch (error: any) {
+      const message =
+        error?.message ?? 'Unknown error occurred while contacting the AI.';
+      setAIOutput(notebookTracker, `${title} — Error`, message);
+    }
+  }
+}
+
+export const notebookActionsPlugin: JupyterFrontEndPlugin<void> = {
+  id: '@jupyterlite/ai:notebook-actions',
+  description:
+    'Notebook toolbar actions for AI-assisted formatting, explanation, debugging, completion, and code review.',
+  autoStart: true,
+  requires: [INotebookTracker, IAISettingsModel, IProviderRegistry],
+  optional: [ITranslator],
+  activate: (
+    app: JupyterFrontEnd,
+    notebookTracker: INotebookTracker,
+    settingsModel: AISettingsModel,
+    providerRegistry: IProviderRegistry,
+    translator?: ITranslator
+  ) => {
+    const trans = (translator ?? nullTranslator).load('jupyterlite_ai');
+
+    const actionDefs: Array<{
+      key: keyof typeof ACTION_COMMANDS;
+      label: string;
+      caption: string;
+      icon: typeof formatIcon;
+    }> = [
+      {
+        key: 'format',
+        label: trans.__('AI Format'),
+        caption: trans.__(
+          'Format the active cell: add comments, docstrings, and improve formatting'
+        ),
+        icon: formatIcon
+      },
+      {
+        key: 'explain',
+        label: trans.__('AI Explain'),
+        caption: trans.__('Explain the active cell code (ELI5 style)'),
+        icon: explainIcon
+      },
+      {
+        key: 'debug',
+        label: trans.__('AI Debug'),
+        caption: trans.__('Debug the error in the active cell'),
+        icon: debugIcon
+      },
+      {
+        key: 'complete',
+        label: trans.__('AI Complete'),
+        caption: trans.__('Complete the code in the active cell'),
+        icon: completeIcon
+      },
+      {
+        key: 'review',
+        label: trans.__('AI Review'),
+        caption: trans.__('Code review the active cell'),
+        icon: reviewIcon
+      }
+    ];
+
+    for (const def of actionDefs) {
+      app.commands.addCommand(ACTION_COMMANDS[def.key], {
+        label: def.label,
+        caption: def.caption,
+        icon: def.icon,
+        isEnabled: () => {
+          const cell = notebookTracker.currentWidget?.content.activeCell;
+          return cell?.model.type === 'code';
+        },
+        execute: () =>
+          executeAction(
+            def.key,
+            notebookTracker,
+            settingsModel,
+            providerRegistry
+          )
+      });
+    }
+
+    notebookTracker.widgetAdded.connect(
+      (_sender: INotebookTracker, notebookPanel: NotebookPanel) => {
+        void notebookPanel.revealed.then(() => {
+          const names: string[] = Array.from(notebookPanel.toolbar.names());
+          let insertIndex = names.indexOf('cellType');
+          insertIndex = insertIndex === -1 ? 0 : insertIndex + 1;
+
+          for (let i = 0; i < actionDefs.length; i++) {
+            const def = actionDefs[i];
+            const button = new CommandToolbarButton({
+              commands: app.commands,
+              id: ACTION_COMMANDS[def.key]
+            });
+            button.addClass('jp-ai-notebook-action-button');
+            notebookPanel.toolbar.insertItem(
+              insertIndex + i,
+              `ai-${def.key}`,
+              button
+            );
+          }
+        });
+      }
+    );
+  }
+};

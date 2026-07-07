@@ -8,6 +8,8 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import type { IAISettingsModel } from '../tokens';
 
+export type { IProviderConfig } from '@jupyternaut/agent';
+
 const PLUGIN_ID = '@jupyterlite/ai:settings-model';
 
 export class AISettingsModel extends VDomModel implements IAISettingsModel {

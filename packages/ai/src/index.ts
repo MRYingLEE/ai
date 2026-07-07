@@ -5,6 +5,7 @@ import {
   createDiscoverSkillsTool,
   createExecuteCommandTool,
   createLoadSkillTool,
+  clearSkillsCache,
   genericProvider,
   googleProvider,
   loadSkillsFromPaths,
@@ -1709,5 +1710,5 @@ export default [
 
 // Export extension points for other extensions to use
 export * from './tokens';
-export * from './icons';
+export * from './notebook-actions/icons';
 export type { IJupyterAIGlobalAPI } from './global-api';
