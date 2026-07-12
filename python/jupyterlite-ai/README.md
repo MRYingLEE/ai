@@ -32,6 +32,18 @@ To install requirements (JupyterLab, JupyterLite and Notebook):
 pip install jupyterlite-ai[jupyter]
 ```
 
+## Local build and downstream publish
+
+In the DataX workspace, use the canonical local scripts from the repo root:
+
+```bash
+cd ../..
+./local_build.sh      # clean rebuild + publish into ../datax_now/built-in-wheels
+./local_verify.sh     # verify downstream wheel pin freshness
+```
+
+`./build_wheel.sh` remains available at the repo root as a compatibility wrapper.
+
 ## Documentation
 
 For detailed usage instructions, including how to configure AI providers, see the [documentation](https://jupyterlite-ai.readthedocs.io/).
