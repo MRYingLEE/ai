@@ -29,7 +29,7 @@ jobs:
         run: |
           set -eux
           pip install "jupyterlab>=4.5.0"
-          pip install -e ".[test]"
+          python scripts/dev_install.py test
 
       - name: Setup Ollama
         uses: ai-action/setup-ollama@6dbbafb345a2e0b94c4ade700f24858c927ef250
@@ -58,14 +58,14 @@ jobs:
         run: jlpm install
 
       - name: Set up browser cache
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: |
             ${{ github.workspace }}/pw-browsers
           key: ${{ runner.os }}-${{ hashFiles('ui-tests/yarn.lock') }}
 
       - name: Install browser
-        run: jlpm playwright install chromium
+        run: jlpm playwright install chromium --only-shell
         working-directory: ui-tests
 
       - name: Execute integration tests
